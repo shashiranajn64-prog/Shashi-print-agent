@@ -1,36 +1,83 @@
-# This is a basic workflow to help you get started with Actions
-
-name: CI
-
-# Controls when the workflow will run
-on:
-  # Triggers the workflow on push or pull request events but only for the "main" branch
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-
-  # Allows you to run this workflow manually from the Actions tab
-  workflow_dispatch:
-
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+name: Build APK
+on: [push]
 jobs:
-  # This workflow contains a single job called "build"
   build:
-    # The type of runner that the job will run on
     runs-on: ubuntu-latest
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v4
-
-      # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
-
-      # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.5
+      - name: Create Project
         run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          cat > settings.gradle << 'EOF'
+          rootProject.name = 'ShashiPrintAgent'
+          pluginManagement {
+            repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+            repositories { google(); mavenCentral() }
+          }
+          include ':app'
+          EOF
+          cat > build.gradle << 'EOF'
+          plugins { id 'com.android.application' version '8.2.2' apply false }
+          EOF
+          mkdir -p app/src/main/java/com/shashi/printagent
+          cat > app/build.gradle << 'EOF'
+          plugins { id 'com.android.application' }
+          android {
+            namespace 'com.shashi.printagent'
+            compileSdk 34
+            defaultConfig {
+              applicationId "com.shashi.printagent"
+              minSdk 24
+              targetSdk 34
+              versionCode 1
+              versionName "1.0"
+            }
+          }
+          dependencies {
+            implementation 'androidx.appcompat:appcompat:1.6.1'
+          }
+          EOF
+          cat > app/src/main/AndroidManifest.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <application android:label="Shashi Print">
+              <activity android:name=".MainActivity" android:exported="true">
+                <intent-filter>
+                  <action android:name="android.intent.action.MAIN"/>
+                  <category android:name="android.intent.category.LAUNCHER"/>
+                </intent-filter>
+              </activity>
+            </application>
+          </manifest>
+          EOF
+          cat > app/src/main/java/com/shashi/printagent/MainActivity.java << 'EOF'
+          package com.shashi.printagent;
+          import android.os.Bundle;
+          import androidx.appcompat.app.AppCompatActivity;
+          import android.widget.TextView;
+          public class MainActivity extends AppCompatActivity {
+            protected void onCreate(Bundle b){
+              super.onCreate(b);
+              TextView tv=new TextView(this);
+              tv.setText("Shashi Print Active");
+              setContentView(tv);
+            }
+          }
+          EOF
+      - name: Build APK
+        run: gradle assembleDebug
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShashiPrintAgent-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
